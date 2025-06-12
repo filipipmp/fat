@@ -1,5 +1,5 @@
 #include "fat.h"
-#include "ds.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
@@ -8,11 +8,13 @@
 #include <strings.h>
 #include <unistd.h>
 
+#include "ds.h"
+
 #define SUPER 0
 #define TABLE 2
 #define DIR 1
 
-#define SIZE 1024
+// #define SIZE 1024
 
 // the superblock
 #define MAGIC_N 0xAC0010DE
@@ -160,12 +162,17 @@ int fat_create(char *name) {
   }
 
   // verifica se o nome ja existe
-  for (int i = 0; i < N_ITEMS; i++) {
-    if (dir[i].used && !strcmp(dir[i].name, name)) {
-      printf("arquivo ja existe!\n");
-      return -1;
-    }
+  if (find_file(name) != -1) {
+    printf("arquivo ja existe!\n");
+    return -1;
   }
+
+  // for (int i = 0; i < N_ITEMS; i++) {
+  //   if (dir[i].used && !strcmp(dir[i].name, name)) {
+  //     printf("arquivo ja existe!\n");
+  //     return -1;
+  //   }
+  // }
 
   // procura um espaco livre no diretorio
   int free_index = -1;
@@ -189,7 +196,7 @@ int fat_create(char *name) {
     }
   }
   if (first_block == -1) {
-    printf("sem blocos livres na fat!\n");
+    printf("erro: sem blocos livres na fat!\n");
     return -1;
   }
 
@@ -218,13 +225,7 @@ int fat_delete(char *name) {
   }
 
   // procura o arquivo no diretorio
-  int index = -1;
-  for (int i = 0; i < N_ITEMS; i++) {
-    if (dir[i].used && !strcmp(dir[i].name, name)) {
-      index = i;
-      break;
-    }
-  }
+  int index = find_file(name);
   if (index == -1) {
     printf("arquivo nao encontrado!\n");
     return -1;
@@ -257,13 +258,7 @@ int fat_getsize(char *name) {
   }
 
   // procura o arquivo no diretorio
-  int index = -1;
-  for (int i = 0; i < N_ITEMS; i++) {
-    if (dir[i].used && !strcmp(dir[i].name, name)) {
-      index = i;
-      break;
-    }
-  }
+  int index = find_file(name);
   if (index == -1) {
     printf("arquivo nao encontrado!\n");
     return -1;
@@ -280,13 +275,7 @@ int fat_read(char *name, char *buff, int length, int offset) {
   }
 
   // procura o arquivo no diretorio
-  int index = -1;
-  for (int i = 0; i < N_ITEMS; i++) {
-    if (dir[i].used && !strcmp(dir[i].name, name)) {
-      index = i;
-      break;
-    }
-  }
+  int index = find_file(name);
   if (index == -1) {
     printf("arquivo nao encontrado!\n");
     return -1;
@@ -342,20 +331,135 @@ int fat_write(char *name, const char *buff, int length, int offset) {
     return -1;
   }
 
+  printf("debug: fat_write(%s, buff, %d, %d)\n", name, length, offset);
+  int original_offset = offset;
+
   // procura o arquivo no diretorio
-  int index = -1;
-  for (int i = 0; i < N_ITEMS; i++) {
-    if (dir[i].used && !strcmp(dir[i].name, name)) {
-      index = i;
-      break;
-    }
-  }
+  int index = find_file(name);
   if (index == -1) {
     printf("arquivo nao encontrado!\n");
     return -1;
   }
 
-  // TODO
+  // não permite sobrescrever o arquivo
+  if (dir[index].length > 0 && offset == 0) {
+    printf("arquivo ja existe, nao e possivel sobrescrever!\n");
+    return -1;
+  }
 
-  return 0;
+  // calcula o bloco inicial e o deslocamento dentro do bloco
+  unsigned int block = dir[index].first;
+  int bytes_written = 0;
+  int bytes_to_write = dir[index].length - offset;
+  int bytes_in_block;
+  while (block != EOFF && bytes_written < length) {
+    // printf("debug: bloco %d, offset %d, bytes_written %d\n", block, offset,
+    //        bytes_written);
+    // se o offset não apontar para o bloco atual, pula para o próximo
+    // printf("debug: offset %d, BLOCK_SIZE %d\n", offset, BLOCK_SIZE);
+    if (offset >= BLOCK_SIZE) {
+      offset -= BLOCK_SIZE;
+      // se o bloco atual é EOFF, busca o próximo bloco livre
+      if (fat[block] == EOFF) {
+        printf("debug: bloco %d é EOFF, procurando próximo bloco livre\n",
+               block);
+        // TODO: funcao separada para achar bloco livre?
+        unsigned int new_block = -1;
+        for (unsigned int i = 0; i < sb.number_blocks; i++) {
+          // FIXME: erro ao chegar no bloco 1023, mesmo que a fat tenha mais
+          // blocos
+          if (fat[i] == FREE) {
+            new_block = i;
+            break;
+          }
+        }
+        if (new_block == -1) {
+          printf("aviso: sem blocos livres na fat!\n");
+          // em vez de retornar erro, break para calcular o tamanho do arquivo e
+          // retornar bytes escritos até aqui
+          break;
+        }
+        // printf(
+        //     "debug(1): bloco %d era EOFF, agora apontando para novo bloco
+        //     %d\n", block, new_block);
+        fat[block] = new_block; // liga o bloco atual ao novo bloco
+        fat[new_block] = EOFF;  // marca o novo bloco como fim de arquivo
+      }
+      block = fat[block]; // atualiza o bloco atual
+      // printf("debug: pulando para o proximo bloco %d, offset %d\n", block,
+      //        offset);
+      continue;
+    }
+    // calcula quantos bytes escrever neste bloco
+    bytes_in_block = BLOCK_SIZE - offset;
+    if (bytes_in_block > length - bytes_written) {
+      bytes_in_block = length - bytes_written;
+    }
+
+    // lê os dados do bloco
+    char block_data[BLOCK_SIZE];
+    ds_read(block, block_data);
+
+    // copia os dados do buffer para o bloco
+    // printf("debug: copiando %d bytes para o bloco %d, offset %d\n",
+    //        bytes_in_block, block, offset);
+    memcpy(block_data + offset, buff + bytes_written, bytes_in_block);
+
+    // escreve os dados de volta no disco
+    ds_write(block, block_data);
+
+    // atualiza contadores
+    bytes_written += bytes_in_block;
+    offset = 0; // no próximo bloco, começamos do início
+
+    // se ainda não terminamos de escrever, precisamos de mais blocos
+    if (bytes_written < length) {
+      if (fat[block] == EOFF) {
+        // procurar um novo bloco livre na fat
+        unsigned int new_block = -1;
+        for (unsigned int i = 0; i < sb.number_blocks; i++) {
+          if (fat[i] == FREE) {
+            new_block = i;
+            break;
+          }
+        }
+        if (new_block == -1) {
+          printf("aviso: sem blocos livres na fat!\n");
+          // em vez de retornar erro, break para calcular o tamanho do arquivo e
+          // retornar bytes escritos até aqui
+          break;
+        }
+        // printf(
+        //     "debug(2): bloco %d era EOFF, agora apontando para novo bloco
+        //     %d\n", block, new_block);
+        fat[block] = new_block; // liga o bloco atual ao novo bloco
+        fat[new_block] = EOFF;  // marca o novo bloco como fim de arquivo
+      }
+      block = fat[block]; // vai para o próximo bloco
+    }
+  }
+
+  // atualiza o tamanho do arquivo no diretório
+  printf("debug: bytes_written %d, offset %d\n", bytes_written, offset);
+  // if (new_length > dir[index].length) {
+  dir[index].length = original_offset + bytes_written;
+  printf("debug: atualizando tamanho do arquivo: %d\n", dir[index].length);
+  ds_write(DIR, (char *)dir);
+  // }
+
+  // salvar a fat
+  for (int i = 0; i < sb.n_fat_blocks; i++) {
+    ds_write(TABLE + i, (char *)(fat + i * BLOCK_SIZE / sizeof(unsigned int)));
+  }
+
+  return bytes_written;
+}
+
+int find_file(char *name) {
+  for (int i = 0; i < N_ITEMS; i++) {
+    if (dir[i].used && !strcmp(dir[i].name, name)) {
+      return i;
+    }
+  }
+  return -1; // arquivo não encontrado
 }

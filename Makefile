@@ -18,6 +18,9 @@ dev: fat-sys
 dev2: fat-sys
 	./fat-sys nova-imagem 20
 
+dev3: fat-sys
+	./fat-sys nova-imagem 1500
+
 img:
 	dd if=/dev/zero of=nova-imagem count=20 bs=4k
 
