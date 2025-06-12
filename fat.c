@@ -14,6 +14,8 @@
 #define TABLE 2
 #define DIR 1
 
+#define DEBUG 0
+
 // #define SIZE 1024
 
 // the superblock
@@ -51,7 +53,7 @@ int mountState = 0;
 
 int fat_format() {
   if (mountState) {
-    printf("ja montado!\n");
+    if (DEBUG) {printf("ja montado!\n");}
     return -1;
   }
 
@@ -123,7 +125,7 @@ void fat_debug() {
 
 int fat_mount() {
   if (mountState) {
-    printf("ja montado!\n");
+    if (DEBUG) {printf("ja montado!\n");}
     return -1;
   }
 
@@ -151,28 +153,21 @@ int fat_mount() {
 
 int fat_create(char *name) {
   if (!mountState) {
-    printf("fat nao montado!\n");
+    if (DEBUG) {printf("fat nao montado!\n");}
     return -1;
   }
 
   // verifica se o nome e valido
   if (strlen(name) > MAX_LETTERS) {
-    printf("nome muito grande!\n");
+    if (DEBUG) {printf("nome muito grande!\n");}
     return -1;
   }
 
   // verifica se o nome ja existe
   if (find_file(name) != -1) {
-    printf("arquivo ja existe!\n");
+    if (DEBUG) {printf("arquivo ja existe!\n");}
     return -1;
   }
-
-  // for (int i = 0; i < N_ITEMS; i++) {
-  //   if (dir[i].used && !strcmp(dir[i].name, name)) {
-  //     printf("arquivo ja existe!\n");
-  //     return -1;
-  //   }
-  // }
 
   // procura um espaco livre no diretorio
   int free_index = -1;
@@ -183,7 +178,7 @@ int fat_create(char *name) {
     }
   }
   if (free_index == -1) {
-    printf("diretorio cheio!\n");
+    if (DEBUG) {printf("diretorio cheio!\n");}
     return -1;
   }
 
@@ -196,7 +191,7 @@ int fat_create(char *name) {
     }
   }
   if (first_block == -1) {
-    printf("erro: sem blocos livres na fat!\n");
+    if (DEBUG) {printf("erro: sem blocos livres na fat!\n");}
     return -1;
   }
 
@@ -220,14 +215,14 @@ int fat_create(char *name) {
 
 int fat_delete(char *name) {
   if (!mountState) {
-    printf("fat nao montado!\n");
+    if (DEBUG) {printf("fat nao montado!\n");}
     return -1;
   }
 
   // procura o arquivo no diretorio
   int index = find_file(name);
   if (index == -1) {
-    printf("arquivo nao encontrado!\n");
+    if (DEBUG) {printf("arquivo nao encontrado!\n");}
     return -1;
   }
 
@@ -253,14 +248,14 @@ int fat_delete(char *name) {
 
 int fat_getsize(char *name) {
   if (!mountState) {
-    printf("fat nao montado!\n");
+    if (DEBUG) {printf("fat nao montado!\n");}
     return -1;
   }
 
   // procura o arquivo no diretorio
   int index = find_file(name);
   if (index == -1) {
-    printf("arquivo nao encontrado!\n");
+    if (DEBUG) {printf("arquivo nao encontrado!\n");}
     return -1;
   }
 
@@ -270,20 +265,20 @@ int fat_getsize(char *name) {
 // Retorna a quantidade de caracteres lidos
 int fat_read(char *name, char *buff, int length, int offset) {
   if (!mountState) {
-    printf("fat nao montado!\n");
+    if (DEBUG) {printf("fat nao montado!\n");}
     return -1;
   }
 
   // procura o arquivo no diretorio
   int index = find_file(name);
   if (index == -1) {
-    printf("arquivo nao encontrado!\n");
+    if (DEBUG) {printf("arquivo nao encontrado!\n");}
     return -1;
   }
 
   // verifica se o tamanho e valido
   if (length <= 0 || offset < 0) {
-    printf("tamanho invalido!\n");
+    if (DEBUG) {printf("tamanho invalido!\n");}
     return -1;
   }
 
@@ -327,23 +322,23 @@ int fat_read(char *name, char *buff, int length, int offset) {
 // Retorna a quantidade de caracteres escritos
 int fat_write(char *name, const char *buff, int length, int offset) {
   if (!mountState) {
-    printf("fat nao montado!\n");
+    if (DEBUG) {printf("fat nao montado!\n");}
     return -1;
   }
 
-  printf("debug: fat_write(%s, buff, %d, %d)\n", name, length, offset);
+  if (DEBUG) {printf("debug: fat_write(%s, buff, %d, %d)\n", name, length, offset);}
   int original_offset = offset;
 
   // procura o arquivo no diretorio
   int index = find_file(name);
   if (index == -1) {
-    printf("arquivo nao encontrado!\n");
+    if (DEBUG) {printf("arquivo nao encontrado!\n");}
     return -1;
   }
 
   // não permite sobrescrever o arquivo
   if (dir[index].length > 0 && offset == 0) {
-    printf("arquivo ja existe, nao e possivel sobrescrever!\n");
+    if (DEBUG) {printf("arquivo ja existe, nao e possivel sobrescrever!\n");}
     return -1;
   }
 
@@ -361,8 +356,7 @@ int fat_write(char *name, const char *buff, int length, int offset) {
       offset -= BLOCK_SIZE;
       // se o bloco atual é EOFF, busca o próximo bloco livre
       if (fat[block] == EOFF) {
-        printf("debug: bloco %d é EOFF, procurando próximo bloco livre\n",
-               block);
+        if (DEBUG) {printf("debug: bloco %d é EOFF, procurando próximo bloco livre\n", block);}
         // TODO: funcao separada para achar bloco livre?
         unsigned int new_block = -1;
         for (unsigned int i = 0; i < sb.number_blocks; i++) {
@@ -374,7 +368,7 @@ int fat_write(char *name, const char *buff, int length, int offset) {
           }
         }
         if (new_block == -1) {
-          printf("aviso: sem blocos livres na fat!\n");
+          if (DEBUG) {printf("aviso: sem blocos livres na fat!\n");}
           // em vez de retornar erro, break para calcular o tamanho do arquivo e
           // retornar bytes escritos até aqui
           break;
@@ -424,7 +418,7 @@ int fat_write(char *name, const char *buff, int length, int offset) {
           }
         }
         if (new_block == -1) {
-          printf("aviso: sem blocos livres na fat!\n");
+          if (DEBUG) {printf("aviso: sem blocos livres na fat!\n");}
           // em vez de retornar erro, break para calcular o tamanho do arquivo e
           // retornar bytes escritos até aqui
           break;
@@ -440,10 +434,10 @@ int fat_write(char *name, const char *buff, int length, int offset) {
   }
 
   // atualiza o tamanho do arquivo no diretório
-  printf("debug: bytes_written %d, offset %d\n", bytes_written, offset);
+  if (DEBUG) {printf("debug: bytes_written %d, offset %d\n", bytes_written, offset);}
   // if (new_length > dir[index].length) {
   dir[index].length = original_offset + bytes_written;
-  printf("debug: atualizando tamanho do arquivo: %d\n", dir[index].length);
+  if (DEBUG) {printf("debug: atualizando tamanho do arquivo: %d\n", dir[index].length);}
   ds_write(DIR, (char *)dir);
   // }
 
