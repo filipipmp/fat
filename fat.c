@@ -342,8 +342,18 @@ int fat_write(char *name, const char *buff, int length, int offset) {
     return -1;
   }
 
-  // procura a entrada do arquivo no diretorio
-  // se nao encontrar, retorna -1
+  // procura o arquivo no diretorio
+  int index = -1;
+  for (int i = 0; i < N_ITEMS; i++) {
+    if (dir[i].used && !strcmp(dir[i].name, name)) {
+      index = i;
+      break;
+    }
+  }
+  if (index == -1) {
+    printf("arquivo nao encontrado!\n");
+    return -1;
+  }
 
   // TODO
 
